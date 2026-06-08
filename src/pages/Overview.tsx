@@ -6,17 +6,37 @@ import {
   Zap, 
   Home as HomeIcon, 
   AlertTriangle,
-  ArrowRight
+  ArrowRight,
+  Play,
+  Pause,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
+import { SIMULATION_DATA, TIME_BLOCK_LABELS } from '../data/mockData';
 
-export type DemoState = 'OPTIMAL' | 'WARNING' | 'CRITICAL';
+export type DemoState = 'OPTIMAL' | 'WARNING' | 'OUTAGE';
 
 interface OverviewProps {
   demoState: DemoState;
   setDemoState: React.Dispatch<React.SetStateAction<DemoState>>;
+  currentDayIndex: number;
+  setCurrentDayIndex: React.Dispatch<React.SetStateAction<number>>;
+  currentBlockIndex: number;
+  setCurrentBlockIndex: React.Dispatch<React.SetStateAction<number>>;
+  isPlaying: boolean;
+  setIsPlaying: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
-const Overview: React.FC<OverviewProps> = ({ demoState, setDemoState }) => {
+const Overview: React.FC<OverviewProps> = ({ 
+  demoState, 
+  setDemoState,
+  currentDayIndex,
+  setCurrentDayIndex,
+  currentBlockIndex,
+  setCurrentBlockIndex,
+  isPlaying,
+  setIsPlaying
+}) => {
   const [countdown, setCountdown] = useState(42);
 
   // Interval for 60 seconds cycle simulation
@@ -32,58 +52,105 @@ const Overview: React.FC<OverviewProps> = ({ demoState, setDemoState }) => {
     return () => clearInterval(interval);
   }, []);
 
-  // System states based on DemoState
+  // Fetch current simulation block data
+  const currentDay = SIMULATION_DATA[currentDayIndex];
+  const currentBlock = currentDay.blocks[currentBlockIndex];
+
+  // System states based on DemoState and simulation block
   const getSystemConfig = () => {
+    const solarPower = currentBlock.solarKw;
+    const homePower = currentBlock.houseLoadKw;
+
     switch (demoState) {
-      case 'WARNING':
+      case 'WARNING': {
+        const gridPower = 0.0; // Paused grid charging
+        const batteryPower = Number((solarPower - homePower).toFixed(2));
+        const batteryTemp = Math.max(46.2, currentBlock.tempCelsius + 8.0);
         return {
           status: 'WARNING',
           color: 'text-amber-400 bg-amber-950/40 border-amber-800/60',
-          batteryTemp: 46.2,
-          batteryStatus: 'warning',
-          batterySoc: 78,
-          solarPower: 2.8,
-          homePower: 3.1,
-          batteryPower: -0.3, // discharging to assist solar
-          gridPower: 0,
-          chargeText: 'Discharging to assist load',
+          batteryTemp,
+          batteryStatus: 'warning' as const,
+          batterySoc: currentBlock.batterySoc,
+          solarPower,
+          homePower,
+          batteryPower,
+          gridPower,
+          chargeText: batteryPower > 0 ? 'Charging from solar' : (batteryPower < 0 ? 'Discharging to assist load' : 'Idle'),
           statusDesc: 'High battery temperature (≥45°C). Grid charging disabled for thermal protection.',
-          flowStatus: { solar: true, battery: true, grid: false, home: true },
-          directions: { solar: 'down', battery: 'up', grid: 'none', home: 'right' }
+          flowStatus: { 
+            solar: solarPower > 0, 
+            battery: Math.abs(batteryPower) > 0.05, 
+            grid: false, 
+            home: true 
+          },
+          directions: { 
+            solar: 'down', 
+            battery: batteryPower > 0 ? 'down' : (batteryPower < 0 ? 'up' : 'none'), 
+            grid: 'none', 
+            home: 'right' 
+          }
         };
-      case 'CRITICAL':
+      }
+      case 'OUTAGE': {
+        const gridPower = 0.0; // Grid connection down
+        const batteryPower = Number((solarPower - homePower).toFixed(2));
         return {
-          status: 'CRITICAL',
+          status: 'OUTAGE',
           color: 'text-rose-400 bg-rose-950/40 border-rose-800/60',
-          batteryTemp: 51.5,
-          batteryStatus: 'critical',
-          batterySoc: 78,
-          solarPower: 0.0,
-          homePower: 3.1,
-          batteryPower: 0.0, // battery isolated
-          gridPower: 3.1, // fully grid powered
-          chargeText: 'Safe Standby - isolated',
-          statusDesc: 'Thermal threshold exceeded (≥50°C). Battery and Solar isolated. Inverter in Safe Standby.',
-          flowStatus: { solar: false, battery: false, grid: true, home: true },
-          directions: { solar: 'none', battery: 'none', grid: 'right', home: 'right' }
+          batteryTemp: currentBlock.tempCelsius,
+          batteryStatus: 'normal' as const,
+          batterySoc: Math.max(12, currentBlock.batterySoc - 5),
+          solarPower,
+          homePower,
+          batteryPower,
+          gridPower,
+          chargeText: 'Grid Lost - Islanding mode',
+          statusDesc: 'GRID OUTAGE: Grid connection lost. System running in islanded backup mode powered by solar and battery storage.',
+          flowStatus: { 
+            solar: solarPower > 0, 
+            battery: Math.abs(batteryPower) > 0.05, 
+            grid: false, 
+            home: true 
+          },
+          directions: { 
+            solar: 'down', 
+            battery: batteryPower > 0 ? 'down' : (batteryPower < 0 ? 'up' : 'none'), 
+            grid: 'none', 
+            home: 'right' 
+          }
         };
+      }
       case 'OPTIMAL':
-      default:
+      default: {
+        const gridPower = currentBlock.gridImportKw;
+        const batteryPower = Number((solarPower - homePower + gridPower).toFixed(2));
         return {
           status: 'OPTIMAL',
           color: 'text-emerald-400 bg-emerald-950/40 border-emerald-800/60',
-          batteryTemp: 34.1,
-          batteryStatus: 'normal',
-          batterySoc: 78,
-          solarPower: 4.2,
-          homePower: 3.1,
-          batteryPower: 1.1, // surplus charging
-          gridPower: 0.0,
-          chargeText: 'Surplus charging battery',
-          statusDesc: 'System functioning normally. Solar powering home and charging battery.',
-          flowStatus: { solar: true, battery: true, grid: false, home: true },
-          directions: { solar: 'down', battery: 'down', grid: 'none', home: 'right' }
+          batteryTemp: currentBlock.tempCelsius,
+          batteryStatus: 'normal' as const,
+          batterySoc: currentBlock.batterySoc,
+          solarPower,
+          homePower,
+          batteryPower,
+          gridPower,
+          chargeText: currentBlock.strategy,
+          statusDesc: currentBlock.strategy,
+          flowStatus: { 
+            solar: solarPower > 0, 
+            battery: Math.abs(batteryPower) > 0.05, 
+            grid: gridPower > 0, 
+            home: true 
+          },
+          directions: { 
+            solar: 'down', 
+            battery: batteryPower > 0 ? 'down' : (batteryPower < 0 ? 'up' : 'none'), 
+            grid: gridPower > 0 ? 'right' : 'none', 
+            home: 'right' 
+          }
         };
+      }
     }
   };
 
@@ -100,10 +167,15 @@ const Overview: React.FC<OverviewProps> = ({ demoState, setDemoState }) => {
 
   const getTickedPower = (val: number, name: string) => {
     if (val === 0) return '0.00';
-    // Add minor stable fluctuations for display realism
     const fl = (Math.sin(microTick + name.charCodeAt(0)) * 0.04);
     return (val + fl).toFixed(2);
   };
+
+  // Calculate day metrics dynamically
+  const totalSolarGenerated = currentDay.blocks.reduce((acc, curr) => acc + curr.solarKw * 3, 0);
+  const totalGridImported = demoState === 'OUTAGE' ? 0 : currentDay.blocks.reduce((acc, curr) => acc + curr.gridImportKw * 3, 0);
+  const totalLoad = currentDay.blocks.reduce((acc, curr) => acc + curr.houseLoadKw * 3, 0);
+  const selfSufficiency = Math.min(100, Math.max(0, Math.round((1 - (totalGridImported / (totalLoad || 1))) * 100)));
 
   return (
     <div className="space-y-6">
@@ -122,7 +194,7 @@ const Overview: React.FC<OverviewProps> = ({ demoState, setDemoState }) => {
               onClick={() => {
                 setDemoState((prev) => {
                   if (prev === 'OPTIMAL') return 'WARNING';
-                  if (prev === 'WARNING') return 'CRITICAL';
+                  if (prev === 'WARNING') return 'OUTAGE';
                   return 'OPTIMAL';
                 });
               }}
@@ -140,7 +212,6 @@ const Overview: React.FC<OverviewProps> = ({ demoState, setDemoState }) => {
 
           {/* 60s Cycle progress indicator */}
           <div className="flex items-center gap-2 bg-brand-dark border border-brand-light/25 rounded-lg px-3 py-1.5 text-xs font-mono-data">
-            {/* SVG countdown circle */}
             <svg className="w-4 h-4 transform -rotate-90">
               <circle
                 cx="8"
@@ -167,16 +238,118 @@ const Overview: React.FC<OverviewProps> = ({ demoState, setDemoState }) => {
         </div>
       </div>
 
-      {/* 2. THE POWER FLOW (Hero Element) */}
+      {/* 2. 7-DAY SIMULATOR CONTROL PANEL */}
+      <div className="glass-panel p-5 rounded-2xl space-y-4 border border-brand-light/35 shadow-md shadow-brand-accent/5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="px-2.5 py-1.5 rounded-lg bg-brand-deep border border-brand-light/25 text-brand-glow text-center shrink-0">
+              <span className="text-xs font-bold uppercase tracking-wider block font-mono-data">Day {currentDayIndex + 1}</span>
+            </div>
+            <div>
+              <h3 className="text-white font-extrabold text-sm flex flex-wrap items-center gap-2">
+                {currentDay.dayName} 
+                {currentDay.isHoliday && <span className="bg-purple-950/60 text-purple-400 border border-purple-800 text-[8px] font-bold px-2 py-0.5 rounded-full uppercase">Holiday Load</span>}
+                {currentDay.isWeekend && <span className="bg-blue-950/60 text-blue-400 border border-blue-800 text-[8px] font-bold px-2 py-0.5 rounded-full uppercase">Weekend Peak</span>}
+              </h3>
+              <p className="text-[10px] text-slate-400 mt-0.5 font-mono-data">
+                Active time segment: <span className="text-brand-accent font-bold">{currentBlock.timeLabel}</span>
+              </p>
+            </div>
+          </div>
+
+          {/* Player controls */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setCurrentBlockIndex((prev) => {
+                  if (prev > 0) return prev - 1;
+                  setCurrentDayIndex((d) => (d > 0 ? d - 1 : 6));
+                  return 7;
+                });
+              }}
+              className="p-2 bg-brand-deep border border-brand-light/20 rounded hover:border-brand-accent/40 text-slate-300 hover:text-white cursor-pointer active:scale-95 transition-all"
+              title="Previous Time Block"
+            >
+              <ChevronLeft size={14} />
+            </button>
+
+            <button
+              onClick={() => setIsPlaying(!isPlaying)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer border ${
+                isPlaying 
+                  ? 'bg-brand-accent/25 border-brand-accent text-brand-glow' 
+                  : 'bg-brand-deep border-brand-light/35 text-slate-300 hover:text-white'
+              }`}
+            >
+              {isPlaying ? <Pause size={12} className="animate-pulse" /> : <Play size={12} />}
+              <span>{isPlaying ? 'PAUSE' : 'PLAY'}</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setCurrentBlockIndex((prev) => {
+                  if (prev < 7) return prev + 1;
+                  setCurrentDayIndex((d) => (d + 1) % 7);
+                  return 0;
+                });
+              }}
+              className="p-2 bg-brand-deep border border-brand-light/20 rounded hover:border-brand-accent/40 text-slate-300 hover:text-white cursor-pointer active:scale-95 transition-all"
+              title="Next Time Block"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
+
+        {/* Day selection tabs */}
+        <div className="grid grid-cols-7 gap-1">
+          {SIMULATION_DATA.map((day, idx) => (
+            <button
+              key={day.dayShort}
+              onClick={() => {
+                setCurrentDayIndex(idx);
+              }}
+              className={`py-1.5 rounded text-[10px] font-black tracking-wider transition-all cursor-pointer text-center ${
+                currentDayIndex === idx 
+                  ? 'bg-brand-deep text-brand-glow border border-brand-accent/50 shadow-sm' 
+                  : 'bg-brand-dark/45 border border-brand-light/5 text-slate-400 hover:text-slate-300'
+              }`}
+            >
+              {day.dayShort}
+            </button>
+          ))}
+        </div>
+
+        {/* Time block scrubber slider */}
+        <div className="grid grid-cols-8 gap-1.5">
+          {TIME_BLOCK_LABELS.map((label, idx) => (
+            <button
+              key={label}
+              onClick={() => setCurrentBlockIndex(idx)}
+              className={`py-2 px-1 rounded text-[8px] font-bold transition-all cursor-pointer truncate text-center relative ${
+                currentBlockIndex === idx
+                  ? 'bg-brand-accent text-brand-bg shadow shadow-brand-accent/20 font-extrabold'
+                  : 'bg-brand-deep/65 hover:bg-brand-deep text-slate-400 hover:text-slate-200'
+              }`}
+              title={label}
+            >
+              <span className="block">{label.split('–')[0]}</span>
+              {(idx >= 2 && idx <= 5) && (
+                <span className={`absolute top-1 right-1 w-1 h-1 rounded-full ${currentBlockIndex === idx ? 'bg-brand-bg' : 'bg-amber-400'}`}></span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 3. THE POWER FLOW (Hero Element) */}
       <div className="glass-panel p-6 rounded-2xl flex flex-col items-center justify-center relative overflow-hidden">
-        {/* Glow behind the diagram */}
         <div className="absolute w-[300px] h-[300px] bg-brand-accent/5 rounded-full filter blur-[80px] -z-10 pointer-events-none"></div>
         
         <div className="w-full max-w-[500px] aspect-square relative my-4">
           
           {/* SVG Connection Paths & Particle flows */}
           <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 400 400">
-            {/* Defs for gradients & markers */}
             <defs>
               <linearGradient id="grad-solar" x1="0%" y1="0%" x2="0%" y2="100%">
                 <stop offset="0%" stopColor="var(--color-energy-solar)" stopOpacity="0.8" />
@@ -190,20 +363,21 @@ const Overview: React.FC<OverviewProps> = ({ demoState, setDemoState }) => {
                 <stop offset="0%" stopColor="var(--color-energy-grid)" stopOpacity="0.8" />
                 <stop offset="100%" stopColor="var(--color-brand-accent)" stopOpacity="0.3" />
               </linearGradient>
-              <linearGradient id="grad-home" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="var(--color-brand-accent)" stopOpacity="0.3" />
-                <stop offset="100%" stopColor="#E2E8F0" stopOpacity="0.8" />
-              </linearGradient>
             </defs>
 
             {/* Static Connector Paths */}
-            {/* Solar -> Inverter (Vertical down) */}
             <path d="M 200,80 L 200,165" stroke="var(--color-brand-deep)" strokeWidth="4" fill="none" />
-            {/* Inverter -> Battery (Vertical down) */}
             <path d="M 200,235 L 200,320" stroke="var(--color-brand-deep)" strokeWidth="4" fill="none" />
-            {/* Grid -> Inverter (Horizontal right) */}
-            <path d="M 80,200 L 165,200" stroke="var(--color-brand-deep)" strokeWidth="4" fill="none" />
-            {/* Inverter -> Home (Horizontal right) */}
+            
+            {/* Grid Line (Dashed/grayed if outage/warning) */}
+            <path 
+              d="M 80,200 L 165,200" 
+              stroke="var(--color-brand-deep)" 
+              strokeWidth="4" 
+              strokeDasharray={demoState !== 'OPTIMAL' ? '4,4' : 'none'} 
+              fill="none" 
+            />
+            
             <path d="M 235,200 L 320,200" stroke="var(--color-brand-deep)" strokeWidth="4" fill="none" />
 
             {/* Active Highlight Flows */}
@@ -215,7 +389,6 @@ const Overview: React.FC<OverviewProps> = ({ demoState, setDemoState }) => {
                 strokeLinecap="round"
                 fill="none" 
                 opacity="0.8"
-                className="shadow-lg shadow-energy-solar/40"
               />
             )}
             
@@ -260,7 +433,7 @@ const Overview: React.FC<OverviewProps> = ({ demoState, setDemoState }) => {
               </circle>
             )}
 
-            {/* Battery (Center -> Bottom or Bottom -> Center) */}
+            {/* Battery Flow */}
             {sys.flowStatus.battery && sys.directions.battery === 'down' && (
               <circle r="4" fill="var(--color-energy-battery)">
                 <animateMotion dur="2.5s" repeatCount="indefinite" path="M 200,200 L 200,320" />
@@ -272,14 +445,14 @@ const Overview: React.FC<OverviewProps> = ({ demoState, setDemoState }) => {
               </circle>
             )}
 
-            {/* Grid (Left -> Center) */}
+            {/* Grid Flow */}
             {sys.flowStatus.grid && sys.directions.grid === 'right' && (
               <circle r="4" fill="var(--color-energy-grid)">
                 <animateMotion dur="1.8s" repeatCount="indefinite" path="M 80,200 L 200,200" />
               </circle>
             )}
 
-            {/* Home (Center -> Right) */}
+            {/* Home Flow */}
             {sys.flowStatus.home && sys.directions.home === 'right' && (
               <circle r="4" fill="var(--color-brand-glow)">
                 <animateMotion dur="1.5s" repeatCount="indefinite" path="M 200,200 L 320,200" />
@@ -302,12 +475,14 @@ const Overview: React.FC<OverviewProps> = ({ demoState, setDemoState }) => {
           {/* GRID Node (Left) */}
           <div className="absolute top-1/2 -translate-y-1/2 left-[10px] flex flex-col items-center">
             <div className={`h-16 w-16 rounded-full bg-brand-dark border-2 ${
-              sys.flowStatus.grid ? 'border-blue-500 animate-pulse-grid shadow-lg shadow-blue-500/20' : 'border-brand-deep'
+              sys.flowStatus.grid ? 'border-blue-500 animate-pulse-grid shadow-lg shadow-blue-500/20' : 'border-brand-deep opacity-60'
             } flex items-center justify-center`}>
               <Zap size={24} className={sys.flowStatus.grid ? 'text-blue-400 animate-pulse' : 'text-slate-600'} />
             </div>
             <span className="text-[10px] font-bold text-slate-400 mt-1.5 tracking-wider uppercase">Utility Grid</span>
-            <span className="text-sm font-bold font-mono-data text-blue-400 mt-0.5">{getTickedPower(sys.gridPower, 'grid')} kW</span>
+            <span className="text-sm font-bold font-mono-data text-blue-400 mt-0.5">
+              {demoState !== 'OPTIMAL' ? 'OFFLINE' : `${getTickedPower(sys.gridPower, 'grid')} kW`}
+            </span>
           </div>
 
           {/* HOME Node (Right) */}
@@ -323,7 +498,9 @@ const Overview: React.FC<OverviewProps> = ({ demoState, setDemoState }) => {
 
           {/* BATTERY Node (Bottom) */}
           <div className="absolute bottom-[20px] left-1/2 -translate-x-1/2 flex flex-col items-center">
-            <span className="text-sm font-bold font-mono-data text-emerald-400 mb-0.5">{sys.batteryPower !== 0 ? (sys.batteryPower > 0 ? '+' : '') + getTickedPower(sys.batteryPower, 'battery') : '0.00'} kW</span>
+            <span className="text-sm font-bold font-mono-data text-emerald-400 mb-0.5">
+              {sys.batteryPower !== 0 ? (sys.batteryPower > 0 ? '+' : '') + getTickedPower(sys.batteryPower, 'battery') : '0.00'} kW
+            </span>
             <div className={`h-16 w-16 rounded-full bg-brand-dark border-2 ${
               sys.flowStatus.battery ? 'border-emerald-500 animate-pulse-battery shadow-lg shadow-emerald-500/20' : 'border-brand-deep'
             } flex items-center justify-center`}>
@@ -336,19 +513,43 @@ const Overview: React.FC<OverviewProps> = ({ demoState, setDemoState }) => {
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-10">
             <div className="h-16 w-16 rounded-xl bg-gradient-to-br from-brand-deep to-brand-bg border border-brand-accent/40 flex flex-col items-center justify-center shadow-xl animate-pulse-glow">
               <span className="text-[7px] font-mono-data text-brand-accent tracking-widest font-black leading-none mb-0.5">AI BRAIN</span>
-              <span className="text-[9px] font-mono-data text-slate-400 font-bold leading-none uppercase">{sys.status === 'OPTIMAL' ? 'Opt' : sys.status === 'WARNING' ? 'Warn' : 'Safe'}</span>
+              <span className="text-[9px] font-mono-data text-slate-400 font-bold leading-none uppercase">
+                {sys.status === 'OPTIMAL' ? 'Opt' : sys.status === 'WARNING' ? 'Warn' : 'Outage'}
+              </span>
             </div>
           </div>
 
         </div>
+
+        {/* Source Mix Breakdown Pill */}
+        <div className="px-4 py-2 bg-brand-deep/85 border border-brand-light/30 rounded-full flex flex-wrap items-center justify-center gap-2.5 text-[10px] font-mono-data text-slate-300 shadow-inner">
+          <span className="font-extrabold text-brand-accent uppercase tracking-wider">Source Mix:</span>
+          {demoState !== 'OPTIMAL' ? (
+            <div className="flex items-center gap-2 text-rose-400 font-bold">
+              <span>SOLAR {sys.solarPower > 0 ? Math.round((sys.solarPower / (sys.solarPower + Math.abs(sys.batteryPower) || 1)) * 100) : 0}%</span>
+              <span>·</span>
+              <span>BATTERY {sys.batteryPower < 0 ? Math.round((Math.abs(sys.batteryPower) / (sys.solarPower + Math.abs(sys.batteryPower) || 1)) * 100) : 100}%</span>
+              <span>·</span>
+              <span className="text-slate-500 line-through">GRID 0%</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-amber-400 font-bold">SOLAR {currentBlock.sourceMix.solar}%</span>
+              <span className="text-slate-500 font-bold">·</span>
+              <span className="text-emerald-400 font-bold">BATTERY {currentBlock.sourceMix.battery}%</span>
+              <span className="text-slate-500 font-bold">·</span>
+              <span className="text-blue-400 font-bold">GRID {currentBlock.sourceMix.grid}%</span>
+            </div>
+          )}
+        </div>
         
-        {/* Safe Mode indicator label */}
+        {/* Dynamic Status Strategy Caption */}
         <div className="text-xs text-slate-400 max-w-sm text-center border-t border-brand-light/10 pt-4 mt-2">
           {sys.statusDesc}
         </div>
       </div>
 
-      {/* 3. KEY STAT TILES */}
+      {/* 4. KEY STAT TILES */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         
         {/* Battery SOC */}
@@ -381,19 +582,18 @@ const Overview: React.FC<OverviewProps> = ({ demoState, setDemoState }) => {
             <div>
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Battery Temp</span>
               <span className={`text-lg font-black font-mono-data mt-1 block ${
-                sys.batteryStatus === 'normal' ? 'text-emerald-400' : sys.batteryStatus === 'warning' ? 'text-amber-400' : 'text-rose-400'
+                sys.batteryStatus === 'normal' ? 'text-emerald-400' : 'text-amber-400'
               }`}>{sys.batteryTemp.toFixed(1)}°C</span>
             </div>
             <AlertTriangle size={18} className={
-              sys.batteryStatus === 'normal' ? 'text-emerald-500/30' : sys.batteryStatus === 'warning' ? 'text-amber-500 animate-bounce' : 'text-rose-500 animate-ping'
+              sys.batteryStatus === 'normal' ? 'text-emerald-500/30' : 'text-amber-500 animate-bounce'
             } />
           </div>
           <div className="mt-4">
-            {/* Simple thermal bar scale */}
+            {/* Thermal bar scale - 0 to 55 max, 45 warn */}
             <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden flex relative">
-              <div className="h-full bg-emerald-500" style={{ width: '75%' }}></div>
-              <div className="h-full bg-amber-500" style={{ width: '10%' }}></div>
-              <div className="h-full bg-rose-500" style={{ width: '15%' }}></div>
+              <div className="h-full bg-emerald-500" style={{ width: '80%' }}></div>
+              <div className="h-full bg-amber-500" style={{ width: '20%' }}></div>
               {/* Slider thumb */}
               <div 
                 className="absolute top-0 bottom-0 w-1 bg-white border border-slate-950 transition-all duration-1000"
@@ -403,7 +603,7 @@ const Overview: React.FC<OverviewProps> = ({ demoState, setDemoState }) => {
             <div className="flex justify-between text-[8px] text-slate-500 mt-1 font-mono-data">
               <span>0°C</span>
               <span>45°C WARN</span>
-              <span>50°C CRIT</span>
+              <span>55°C MAX</span>
             </div>
           </div>
         </div>
@@ -418,7 +618,7 @@ const Overview: React.FC<OverviewProps> = ({ demoState, setDemoState }) => {
               </span>
             </div>
             <span className="text-[10px] text-slate-400 block mt-0.5">
-              {sys.batteryPower > 0 ? 'Surplus solar (Charging)' : sys.batteryPower < 0 ? 'Deficit (Discharging battery)' : 'Grid Powered (Standby)'}
+              {sys.batteryPower > 0 ? 'Surplus solar (Charging)' : sys.batteryPower < 0 ? 'Deficit (Discharging battery)' : 'Grid Balanced'}
             </span>
           </div>
           <div className="mt-2.5">
@@ -438,12 +638,13 @@ const Overview: React.FC<OverviewProps> = ({ demoState, setDemoState }) => {
         <div className="glass-panel p-5 rounded-xl flex flex-col justify-between">
           <div>
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Today's Savings</span>
-            <span className="text-2xl font-black text-brand-glow font-mono-data mt-1 block">₱312.45</span>
+            <span className="text-2xl font-black text-brand-glow font-mono-data mt-1 block">
+              ₱{(312.45 * (totalSolarGenerated / 30)).toFixed(2)}
+            </span>
             <span className="text-[10px] text-slate-400 block mt-0.5">Est. payback confidence</span>
           </div>
           <div className="flex items-end justify-between mt-2">
             <span className="text-[10px] bg-brand-deep text-brand-accent px-1.5 py-0.5 rounded font-mono-data">CONF: MEASURED</span>
-            {/* Sparkline simulation in inline SVG */}
             <svg className="w-16 h-6 stroke-brand-glow fill-none" viewBox="0 0 50 20">
               <path d="M0,18 L8,14 L16,16 L24,10 L32,12 L40,4 L48,2" strokeWidth="2" strokeLinecap="round" />
             </svg>
@@ -452,18 +653,18 @@ const Overview: React.FC<OverviewProps> = ({ demoState, setDemoState }) => {
 
       </div>
 
-      {/* 4. TODAY AT A GLANCE (Compact Strip) */}
+      {/* 5. TODAY AT A GLANCE (Compact Strip) */}
       <div className="glass-panel p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4 text-xs">
         
         <div className="flex flex-wrap justify-around w-full md:w-auto md:justify-start gap-6">
           <div className="text-center md:text-left">
             <span className="text-slate-400 block">Solar Generated</span>
-            <span className="font-bold text-white font-mono-data">18.4 kWh</span>
+            <span className="font-bold text-white font-mono-data">{totalSolarGenerated.toFixed(1)} kWh</span>
           </div>
           <div className="border-r border-brand-light/25 hidden md:block"></div>
           <div className="text-center md:text-left">
             <span className="text-slate-400 block">Grid Imported</span>
-            <span className="font-bold text-slate-300 font-mono-data">6.2 kWh</span>
+            <span className="font-bold text-slate-300 font-mono-data">{totalGridImported.toFixed(1)} kWh</span>
           </div>
           <div className="border-r border-brand-light/25 hidden md:block"></div>
           
@@ -472,9 +673,9 @@ const Overview: React.FC<OverviewProps> = ({ demoState, setDemoState }) => {
               <span className="text-slate-400 block text-center md:text-left">Self-Sufficiency</span>
               <div className="flex items-center gap-2 mt-0.5">
                 <div className="w-20 bg-slate-800 h-2 rounded-full overflow-hidden">
-                  <div className="bg-brand-accent h-full" style={{ width: '74%' }}></div>
+                  <div className="bg-brand-accent h-full" style={{ width: `${selfSufficiency}%` }}></div>
                 </div>
-                <span className="font-bold text-brand-accent font-mono-data">74%</span>
+                <span className="font-bold text-brand-accent font-mono-data">{selfSufficiency}%</span>
               </div>
             </div>
           </div>
@@ -491,7 +692,7 @@ const Overview: React.FC<OverviewProps> = ({ demoState, setDemoState }) => {
         </NavLink>
       </div>
 
-      {/* 5. LIVE TICKER / RECENT ACTIVITY */}
+      {/* 6. LIVE TICKER / RECENT ACTIVITY */}
       <div className="glass-panel p-6 rounded-xl space-y-4">
         <div className="flex items-center justify-between border-b border-brand-light/20 pb-2">
           <span className="font-display font-semibold text-white text-sm uppercase tracking-wide">Live Microgrid Event Log</span>
@@ -500,43 +701,39 @@ const Overview: React.FC<OverviewProps> = ({ demoState, setDemoState }) => {
         
         <div className="space-y-3 font-mono-data text-xs">
           
-          {demoState === 'CRITICAL' ? (
+          {demoState === 'OUTAGE' ? (
             <div className="flex items-start gap-2.5 text-rose-400 bg-rose-950/20 border border-rose-900/40 p-2.5 rounded">
-              <span className="text-slate-400 shrink-0">21:44</span>
+              <span className="text-slate-400 shrink-0">{currentBlock.timeLabel.split('–')[0]}</span>
               <span>•</span>
-              <span className="font-semibold">CRITICAL: Battery safe isolation active. Temp 51.5°C &gt;= 50°C. Inverter in Safe Standby mode, whole home load bypassed to Grid.</span>
+              <span className="font-semibold">GRID OUTAGE: Utility grid connection interrupted. Switched to islanded backup power supply. Running Home and cooling system on solar/battery reserve.</span>
             </div>
           ) : demoState === 'WARNING' ? (
             <div className="flex items-start gap-2.5 text-amber-400 bg-amber-950/20 border border-amber-900/40 p-2.5 rounded">
-              <span className="text-slate-400 shrink-0">21:44</span>
+              <span className="text-slate-400 shrink-0">{currentBlock.timeLabel.split('–')[0]}</span>
               <span>•</span>
-              <span className="font-semibold">WARNING: Battery temp 46.2°C &gt;= 45°C. Disabling charging from Grid. Battery helper discharge configured to support home load.</span>
+              <span className="font-semibold">WARNING: Battery temp warm ({sys.batteryTemp.toFixed(1)}°C &gt;= 45°C). Lead-carbon backup profiles adjusted. Grid charging paused to regulate heat.</span>
             </div>
           ) : (
             <div className="flex items-start gap-2.5 text-emerald-400 bg-emerald-950/20 border border-emerald-900/40 p-2.5 rounded">
-              <span className="text-slate-400 shrink-0">21:44</span>
+              <span className="text-slate-400 shrink-0">{currentBlock.timeLabel.split('–')[0]}</span>
               <span>•</span>
-              <span>Surplus solar charging battery at 1.10 kW (0.1C). Load balanced.</span>
+              <span className="font-semibold">{currentBlock.eventLog}</span>
             </div>
           )}
 
-          <div className="flex items-start gap-2.5 text-slate-300 pl-2">
-            <span className="text-slate-500 shrink-0">06:32</span>
-            <span className="text-slate-500">•</span>
-            <span>Surplus solar charging battery at 1.25 kW (0.1C). Load fully offset.</span>
-          </div>
-
-          <div className="flex items-start gap-2.5 text-slate-300 pl-2">
-            <span className="text-slate-500 shrink-0">02:00</span>
-            <span className="text-slate-500">•</span>
-            <span className="text-brand-accent">Nightly learning cycle complete. Load prediction models and breaker baselines refreshed.</span>
-          </div>
-
-          <div className="flex items-start gap-2.5 text-slate-300 pl-2">
-            <span className="text-slate-500 shrink-0">22:00</span>
-            <span className="text-slate-500">•</span>
-            <span>Pre-charged battery to 75% SOC target based on Sunny weather forecast for tomorrow. (₱11.02/kWh rate window)</span>
-          </div>
+          {/* Older event logs */}
+          {Array.from({ length: 3 }).map((_, logIdx) => {
+            const targetIdx = (currentBlockIndex - 1 - logIdx + 8) % 8;
+            const prevBlock = currentDay.blocks[targetIdx];
+            const hourStr = TIME_BLOCK_LABELS[targetIdx].split('–')[0];
+            return (
+              <div key={logIdx} className="flex items-start gap-2.5 text-slate-300 pl-2">
+                <span className="text-slate-500 shrink-0">{hourStr}</span>
+                <span className="text-slate-500">•</span>
+                <span>{prevBlock.eventLog}</span>
+              </div>
+            );
+          })}
         </div>
       </div>
 

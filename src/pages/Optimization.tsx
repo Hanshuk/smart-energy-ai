@@ -2,7 +2,6 @@ import React from 'react';
 import { 
   Sun, 
   CloudSun, 
-  Cloud, 
   CloudLightning,
   Sparkles,
   Info,
@@ -18,6 +17,11 @@ import {
   ReferenceArea, 
   CartesianGrid 
 } from 'recharts';
+
+interface OptimizationProps {
+  currentDayIndex: number;
+  currentBlockIndex: number;
+}
 
 // 24 Hour battery charge/discharge timeline data
 const ARBITRAGE_TIMELINE = [
@@ -36,7 +40,22 @@ const ARBITRAGE_TIMELINE = [
   { hour: '24:00', SOC: 45, rate: 11.02 }
 ];
 
-const Optimization: React.FC = () => {
+const Optimization: React.FC<OptimizationProps> = ({ currentDayIndex, currentBlockIndex }) => {
+  const isNightBlock = currentBlockIndex === 7 || currentBlockIndex === 0 || currentBlockIndex === 1;
+  const targetPlanningDayIdx = isNightBlock ? (currentDayIndex + 1) % 7 : currentDayIndex;
+
+  const PLAN_PRESETS = [
+    { day: 'Monday', condition: 'Sunny (85%)', demand: 'Normal Weekday (1.0x)', targetSoc: 75, reason: 'Standard weekday demand + high solar yield forecast. Preserves 25% battery headroom to absorb free morning solar.' },
+    { day: 'Tuesday', condition: 'Sunny (82%)', demand: 'Normal Weekday (0.95x)', targetSoc: 75, reason: 'Mild weekday demand + optimal weather. Battery reserve will comfortably bridge evening peak without grid support.' },
+    { day: 'Wednesday', condition: 'Storm (20%)', demand: 'Holiday (1.35x Elevated)', targetSoc: 95, reason: 'CRITICAL PRE-CHARGE: Tomorrow is a public holiday with heavy storm forecast (<15% solar yield). Pre-filling battery at cheap night rates.' },
+    { day: 'Thursday', condition: 'Mild (65%)', demand: 'Normal Weekday (1.02x)', targetSoc: 80, reason: 'Slightly higher weekday load + moderate cloud forecast. Extra 5% buffer guarantees grid-free evening peak.' },
+    { day: 'Friday', condition: 'Sunny (80%)', demand: 'Normal Weekday (1.08x)', targetSoc: 75, reason: 'Optimal clear sky forecast allows system to rely heavily on self-generated solar during daytime load increases.' },
+    { day: 'Saturday', condition: 'Mild (60%)', demand: 'Weekend (1.45x High)', targetSoc: 90, reason: 'WEEKEND PREPARATION: Learned weekend usage patterns combined with scattered clouds. Bumps target SOC up.' },
+    { day: 'Sunday', condition: 'Sunny (80%)', demand: 'Weekend (1.38x High)', targetSoc: 85, reason: 'Weekend load profile remains elevated. High solar index allows a slightly lower pre-charge target compared to Saturday.' }
+  ];
+
+  const activePlan = PLAN_PRESETS[targetPlanningDayIdx];
+
   return (
     <div className="space-y-8 animate-fade-in">
       
@@ -135,7 +154,7 @@ const Optimization: React.FC = () => {
       <div className="glass-panel p-6 rounded-2xl space-y-6">
         <div className="flex justify-between items-center border-b border-brand-light/20 pb-2">
           <h2 className="text-lg font-bold font-display text-white uppercase tracking-wider flex items-center gap-2">
-            <Sun size={18} className="text-amber-400" /> Section B: Weather-Driven Pre-Charge
+            <Sun size={18} className="text-amber-400" /> Section B: AI Weather & Demand Pre-Charge
           </h2>
           <span className="text-[10px] font-mono-data bg-amber-950/50 text-amber-400 px-2 py-0.5 rounded border border-amber-900/40 uppercase">ACTIVE PLAN</span>
         </div>
@@ -143,7 +162,7 @@ const Optimization: React.FC = () => {
         <div className="bg-brand-dark/40 border border-brand-light/10 p-4 rounded-xl flex gap-3 text-xs text-slate-400">
           <Info size={16} className="text-brand-accent shrink-0 mt-0.5" />
           <p>
-            At <span className="text-white font-semibold">2:00 AM nightly</span>, the system brain retrieves localized cloud forecasts. It automatically sets tomorrow's target State of Charge (SOC) to prevent drawing expensive grid energy while leaving enough battery headroom to absorb free morning solar.
+            At <span className="text-white font-semibold">2:00 AM nightly</span>, the system brain retrieves localized cloud forecasts. It merges this with <span className="text-brand-accent font-semibold">learned demand patterns</span> (weekday vs. weekend peak vs. holidays) to automatically target the optimal battery reserve, capped at 95%.
           </p>
         </div>
 
@@ -154,7 +173,7 @@ const Optimization: React.FC = () => {
           <div className="md:col-span-5 bg-brand-dark/50 border border-brand-light/20 rounded-xl p-5 flex flex-col justify-between space-y-4">
             <div>
               <span className="text-[9px] font-mono-data text-brand-accent uppercase tracking-widest block">Tonight's Automation Target</span>
-              <h3 className="text-white font-bold text-sm mt-1">Optimal Target: 75% SOC</h3>
+              <h3 className="text-white font-bold text-sm mt-1">Optimal Target: {activePlan.targetSoc}% SOC</h3>
             </div>
             
             <div className="flex items-center gap-4 py-2">
@@ -168,19 +187,21 @@ const Optimization: React.FC = () => {
                     strokeWidth="4" 
                     fill="none" 
                     strokeDasharray="175.9" 
-                    strokeDashoffset={175.9 - (175.9 * 75) / 100}
+                    strokeDashoffset={175.9 - (175.9 * activePlan.targetSoc) / 100}
                   />
                 </svg>
-                <span className="absolute text-xs font-mono-data font-black text-amber-400">75%</span>
+                <span className="absolute text-xs font-mono-data font-black text-amber-400">{activePlan.targetSoc}%</span>
               </div>
               <div className="text-xs">
-                <span className="text-slate-400">Forecast: <strong className="text-white">Sunny & Clear</strong></span>
-                <span className="text-[10px] text-emerald-400 block mt-1">Reason: Leaves 25% headroom to capture free morning solar.</span>
+                <span className="text-slate-400 block">Day: <strong className="text-white">{activePlan.day}</strong></span>
+                <span className="text-slate-400 block mt-0.5">Learned Demand: <strong className="text-brand-accent">{activePlan.demand}</strong></span>
+                <span className="text-slate-400 block mt-0.5">Forecast: <strong className="text-white">{activePlan.condition}</strong></span>
+                <span className="text-[9px] text-emerald-400 block mt-1">Reason: {activePlan.reason}</span>
               </div>
             </div>
 
             <div className="border-t border-brand-light/10 pt-3 flex justify-between text-[10px] font-mono-data text-slate-500">
-              <span>Current SOC: 78%</span>
+              <span>Target SOC: {activePlan.targetSoc}%</span>
               <span>Rate: Off-Peak (₱11.02)</span>
             </div>
           </div>
@@ -189,20 +210,16 @@ const Optimization: React.FC = () => {
           <div className="md:col-span-7 bg-brand-dark/30 border border-brand-light/10 rounded-xl p-4 flex flex-col justify-between">
             <span className="text-[9px] font-mono-data text-slate-500 uppercase block mb-2">Automated Targeting Matrix</span>
             <div className="space-y-2 text-xs">
-              <div className="flex justify-between items-center p-2 rounded bg-amber-950/20 border border-amber-900/50 text-amber-200">
-                <span className="font-semibold flex items-center gap-1.5"><Sun size={12} /> Sunny / Clear (&ge;80% sun)</span>
+              <div className="flex justify-between items-center p-2 rounded hover:bg-brand-deep/20 text-slate-400">
+                <span className="font-semibold flex items-center gap-1.5"><Sun size={12} /> Sunny / Clear Preset</span>
                 <span className="font-mono-data font-bold">75% Target</span>
               </div>
               <div className="flex justify-between items-center p-2 rounded hover:bg-brand-deep/20 text-slate-400">
-                <span className="flex items-center gap-1.5"><CloudSun size={12} /> Mild / Scattered (60–80%)</span>
-                <span className="font-mono-data font-bold">80% Target</span>
+                <span className="flex items-center gap-1.5"><CloudSun size={12} /> Cloud/Weekend Shift</span>
+                <span className="font-mono-data font-bold">80–90% Target</span>
               </div>
               <div className="flex justify-between items-center p-2 rounded hover:bg-brand-deep/20 text-slate-400">
-                <span className="flex items-center gap-1.5"><Cloud size={12} /> Heavy / Overcast (40–60%)</span>
-                <span className="font-mono-data font-bold">88% Target</span>
-              </div>
-              <div className="flex justify-between items-center p-2 rounded hover:bg-brand-deep/20 text-slate-400">
-                <span className="flex items-center gap-1.5"><CloudLightning size={12} /> Rainy / Storm (&lt;40%)</span>
+                <span className="flex items-center gap-1.5"><CloudLightning size={12} /> Rainy / Storm / Holiday</span>
                 <span className="font-mono-data font-bold">95% Target</span>
               </div>
             </div>

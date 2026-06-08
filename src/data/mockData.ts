@@ -18,14 +18,14 @@ export interface CircuitInfo {
 export interface BatteryStatus {
   soc: number; // State of Charge in %
   tempCelsius: number;
-  status: 'normal' | 'warning' | 'critical';
+  status: 'normal' | 'warning'; // lead-carbon: removed critical
   chargeRateKw: number; // negative for discharge
   voltage: number;
 }
 
 export interface InverterState {
   source: 'solar' | 'battery' | 'grid';
-  mode: 'optimized' | 'safe_standby' | 'grid_bypass';
+  mode: 'optimized' | 'island_backup' | 'grid_bypass';
   decisionTimeLeftSeconds: number; // 60 seconds cycle countdown
   lastNightlySync: string; // 2:00 AM
 }
@@ -217,6 +217,185 @@ export const PRICING_FACTS = {
   arbitrageDelta: 4.67,
   utilityName: 'Meralco'
 };
+
+// 7-Day Simulation Dataset
+export interface TimeBlock {
+  timeLabel: string;
+  solarKw: number;
+  houseLoadKw: number;
+  batterySoc: number;
+  gridImportKw: number;
+  tempCelsius: number;
+  sourceMix: {
+    solar: number;
+    battery: number;
+    grid: number;
+  };
+  strategy: string;
+  eventLog: string;
+}
+
+export interface DayProfile {
+  dayName: string;
+  dayShort: string;
+  isHoliday?: boolean;
+  isWeekend?: boolean;
+  blocks: TimeBlock[];
+}
+
+export const TIME_BLOCK_LABELS = [
+  '00:00–03:00',
+  '03:00–06:00',
+  '06:00–09:00',
+  '09:00–12:00',
+  '12:00–15:00',
+  '15:00–18:00',
+  '18:00–21:00',
+  '21:00–24:00'
+];
+
+const createBlocksForDay = (loadFactor: number, _isHolidayOrWeekend = false): TimeBlock[] => {
+  const load0 = Number((0.8 * loadFactor).toFixed(2));
+  const load1 = Number((0.7 * loadFactor).toFixed(2));
+  const load2 = Number((2.2 * loadFactor).toFixed(2));
+  const load3 = Number((3.1 * loadFactor).toFixed(2));
+  const load4 = Number((3.5 * loadFactor).toFixed(2));
+  const load5 = Number((2.8 * loadFactor).toFixed(2));
+  const load6 = Number((4.2 * loadFactor).toFixed(2));
+  const load7 = Number((1.5 * loadFactor).toFixed(2));
+
+  return [
+    {
+      timeLabel: '00:00–03:00',
+      solarKw: 0.0,
+      houseLoadKw: load0,
+      batterySoc: 40,
+      gridImportKw: load0, // Drawing from cheap night grid to preserve battery base
+      tempCelsius: 32.5,
+      sourceMix: { solar: 0, battery: 0, grid: 100 },
+      strategy: 'Off-peak Night shifting charging active (₱11.02/kWh). preserving battery reserve.',
+      eventLog: 'Grid power active. Pre-charge sequence holding target for tomorrow.'
+    },
+    {
+      timeLabel: '03:00–06:00',
+      solarKw: 0.0,
+      houseLoadKw: load1,
+      batterySoc: 75, // pre-charged from grid overnight
+      gridImportKw: 0.0,
+      tempCelsius: 31.8,
+      sourceMix: { solar: 0, battery: 100, grid: 0 },
+      strategy: 'Battery support active. Off-peak rate pre-charge finished.',
+      eventLog: 'Switched house load to battery. Pre-charged to 75% target.'
+    },
+    {
+      timeLabel: '06:00–09:00',
+      solarKw: 0.9,
+      houseLoadKw: load2,
+      batterySoc: 68,
+      gridImportKw: Number((load2 - 0.9 - 1.0).toFixed(2)), // Solar weak, battery discharges, grid bridges if needed
+      tempCelsius: 33.2,
+      sourceMix: { solar: 35, battery: 45, grid: 20 },
+      strategy: 'Peak rate active (₱15.69/kWh). Weak morning solar assisted by battery + grid.',
+      eventLog: 'Solar power rising. Battery supporting load with minor grid assist.'
+    },
+    {
+      timeLabel: '09:00–12:00',
+      solarKw: 4.5,
+      houseLoadKw: load3,
+      batterySoc: 75, // charging surplus
+      gridImportKw: 0.0,
+      tempCelsius: 35.5,
+      sourceMix: { solar: 100, battery: 0, grid: 0 },
+      strategy: 'Maximum Solar priority. Surplus solar charging battery.',
+      eventLog: 'Zero grid draw. Solar covers total house load and charges battery.'
+    },
+    {
+      timeLabel: '12:00–15:00',
+      solarKw: 5.6,
+      houseLoadKw: load4,
+      batterySoc: 82, // battery high
+      gridImportKw: 0.0,
+      tempCelsius: 38.4,
+      sourceMix: { solar: 100, battery: 0, grid: 0 },
+      strategy: 'Peak solar. Battery charging at 1.1 kW. Grid idle.',
+      eventLog: 'Surplus solar charging battery. Battery temperature warm but safe.'
+    },
+    {
+      timeLabel: '15:00–18:00',
+      solarKw: 1.8,
+      houseLoadKw: load5,
+      batterySoc: 78,
+      gridImportKw: 0.0,
+      tempCelsius: 36.8,
+      sourceMix: { solar: 55, battery: 45, grid: 0 },
+      strategy: 'Solar ramping down. Battery covers load deficit to dodge peak rates.',
+      eventLog: 'Battery assisting solar as generation declines. Grid remains isolated.'
+    },
+    {
+      timeLabel: '18:00–21:00',
+      solarKw: 0.0,
+      houseLoadKw: load6, // Evening cooking/AC peak
+      batterySoc: 52,
+      gridImportKw: Number((load6 - 2.5).toFixed(2)), // Battery limits discharge to 2.5 kW, grid bridges
+      tempCelsius: 35.1,
+      sourceMix: { solar: 0, battery: 60, grid: 40 },
+      strategy: 'Evening load peak. Stored battery discharging (2.5kW max), grid bridging deficit.',
+      eventLog: 'High household demand. Battery discharging at maximum safe rate. Grid bridging.'
+    },
+    {
+      timeLabel: '21:00–24:00',
+      solarKw: 0.0,
+      houseLoadKw: load7,
+      batterySoc: 35,
+      gridImportKw: 0.0,
+      tempCelsius: 33.6,
+      sourceMix: { solar: 0, battery: 100, grid: 0 },
+      strategy: 'Late evening. House load covered entirely by remaining battery reserve.',
+      eventLog: 'Load reduced. Battery powering household. Approaching off-peak charging window.'
+    }
+  ];
+};
+
+export const SIMULATION_DATA: DayProfile[] = [
+  {
+    dayName: 'Day 1 · Monday',
+    dayShort: 'Mon',
+    blocks: createBlocksForDay(1.0)
+  },
+  {
+    dayName: 'Day 2 · Tuesday',
+    dayShort: 'Tue',
+    blocks: createBlocksForDay(0.95)
+  },
+  {
+    dayName: 'Day 3 · Wednesday',
+    dayShort: 'Wed',
+    isHoliday: true, // Holiday profile: higher usage
+    blocks: createBlocksForDay(1.35, true)
+  },
+  {
+    dayName: 'Day 4 · Thursday',
+    dayShort: 'Thu',
+    blocks: createBlocksForDay(1.02)
+  },
+  {
+    dayName: 'Day 5 · Friday',
+    dayShort: 'Fri',
+    blocks: createBlocksForDay(1.08)
+  },
+  {
+    dayName: 'Day 6 · Saturday',
+    dayShort: 'Sat',
+    isWeekend: true, // Weekend profile: higher usage
+    blocks: createBlocksForDay(1.45, true)
+  },
+  {
+    dayName: 'Day 7 · Sunday',
+    dayShort: 'Sun',
+    isWeekend: true,
+    blocks: createBlocksForDay(1.38, true)
+  }
+];
 
 // Chart Data generator for detail modal
 export interface HourlyData {

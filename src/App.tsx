@@ -21,7 +21,8 @@ import {
   HelpCircle,
   QrCode,
   Copy,
-  Check
+  Check,
+  Brain
 } from 'lucide-react';
 
 // Import pages
@@ -31,6 +32,7 @@ import Faults from './pages/Faults';
 import Optimization from './pages/Optimization';
 import Upgrade from './pages/Upgrade';
 import Savings from './pages/Savings';
+import Intelligence from './pages/Intelligence';
 
 // Clean 404 Page
 const NotFound: React.FC = () => {
@@ -61,6 +63,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { name: 'Live Overview', path: '/', icon: Activity },
+  { name: 'Usage Intelligence', path: '/intelligence', icon: Brain },
   { name: 'Circuits', path: '/circuits', icon: Cpu },
   { name: 'Predictive Fault AI', path: '/faults', icon: ShieldAlert },
   { name: 'Energy Optimization', path: '/optimization', icon: Zap },
@@ -68,7 +71,7 @@ const navItems: NavItem[] = [
   { name: 'Savings & ROI', path: '/savings', icon: TrendingUp },
 ];
 
-export type DemoState = 'OPTIMAL' | 'WARNING' | 'CRITICAL';
+export type DemoState = 'OPTIMAL' | 'WARNING' | 'OUTAGE';
 
 const AppContent: React.FC<{ 
   isMobilePreview: boolean; 
@@ -78,6 +81,12 @@ const AppContent: React.FC<{
   setUnreadCount: React.Dispatch<React.SetStateAction<number>>;
   isAlertOpen: boolean;
   setIsAlertOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  currentDayIndex: number;
+  setCurrentDayIndex: React.Dispatch<React.SetStateAction<number>>;
+  currentBlockIndex: number;
+  setCurrentBlockIndex: React.Dispatch<React.SetStateAction<number>>;
+  isPlaying: boolean;
+  setIsPlaying: React.Dispatch<React.SetStateAction<boolean>>;
 }> = ({ 
   isMobilePreview, 
   demoState, 
@@ -85,7 +94,13 @@ const AppContent: React.FC<{
   unreadCount, 
   setUnreadCount,
   isAlertOpen,
-  setIsAlertOpen
+  setIsAlertOpen,
+  currentDayIndex,
+  setCurrentDayIndex,
+  currentBlockIndex,
+  setCurrentBlockIndex,
+  isPlaying,
+  setIsPlaying
 }) => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -176,7 +191,7 @@ const AppContent: React.FC<{
                 <span className="h-2 w-2 rounded-full bg-rose-500 animate-pulse"></span>
               )}
               <span className="text-[8px] border border-brand-accent/40 rounded px-0.5 scale-90">LoRa</span>
-              <Battery size={12} className={demoState === 'CRITICAL' ? 'text-rose-500 animate-pulse' : demoState === 'WARNING' ? 'text-amber-500' : 'text-emerald-400'} />
+              <Battery size={12} className={demoState === 'OUTAGE' ? 'text-rose-500 animate-pulse' : demoState === 'WARNING' ? 'text-amber-500' : 'text-emerald-400'} />
             </div>
           </div>
 
@@ -192,7 +207,7 @@ const AppContent: React.FC<{
               onClick={() => {
                 setDemoState((prev) => {
                   if (prev === 'OPTIMAL') return 'WARNING';
-                  if (prev === 'WARNING') return 'CRITICAL';
+                  if (prev === 'WARNING') return 'OUTAGE';
                   return 'OPTIMAL';
                 });
               }}
@@ -200,17 +215,52 @@ const AppContent: React.FC<{
                 demoState === 'OPTIMAL' ? 'bg-emerald-950/60 text-emerald-400 border-emerald-800' : demoState === 'WARNING' ? 'bg-amber-950/60 text-amber-400 border-amber-800' : 'bg-rose-950/60 text-rose-400 border-rose-800'
               }`}
             >
-              STATE: {demoState}
+              STATE: {demoState === 'OUTAGE' ? 'OUTAGE' : demoState}
             </button>
           </div>
 
           {/* Mobile Main Content Area */}
           <div className="flex-1 overflow-y-auto px-4 py-4 pb-20 bg-brand-bg relative scroll-smooth">
             <Routes>
-              <Route path="/" element={<Overview demoState={demoState} setDemoState={setDemoState} />} />
+              <Route 
+                path="/" 
+                element={
+                  <Overview 
+                    demoState={demoState} 
+                    setDemoState={setDemoState} 
+                    currentDayIndex={currentDayIndex}
+                    setCurrentDayIndex={setCurrentDayIndex}
+                    currentBlockIndex={currentBlockIndex}
+                    setCurrentBlockIndex={setCurrentBlockIndex}
+                    isPlaying={isPlaying}
+                    setIsPlaying={setIsPlaying}
+                  />
+                } 
+              />
+              <Route 
+                path="/intelligence" 
+                element={
+                  <Intelligence 
+                    currentDayIndex={currentDayIndex}
+                    setCurrentDayIndex={setCurrentDayIndex}
+                    currentBlockIndex={currentBlockIndex}
+                    setCurrentBlockIndex={setCurrentBlockIndex}
+                    isPlaying={isPlaying}
+                    setIsPlaying={setIsPlaying}
+                  />
+                } 
+              />
               <Route path="/circuits" element={<Circuits />} />
               <Route path="/faults" element={<Faults />} />
-              <Route path="/optimization" element={<Optimization />} />
+              <Route 
+                path="/optimization" 
+                element={
+                  <Optimization 
+                    currentDayIndex={currentDayIndex}
+                    currentBlockIndex={currentBlockIndex}
+                  />
+                } 
+              />
               <Route path="/upgrade" element={<Upgrade />} />
               <Route path="/savings" element={<Savings />} />
               <Route path="*" element={<NotFound />} />
@@ -308,7 +358,7 @@ const AppContent: React.FC<{
                   demoState === 'OPTIMAL' ? 'bg-emerald-500 text-brand-bg shadow-sm shadow-emerald-500/10' : 'bg-brand-dark text-slate-400 hover:text-slate-200'
                 }`}
               >
-                OPT
+                NORMAL
               </button>
               <button 
                 onClick={() => setDemoState('WARNING')}
@@ -319,12 +369,12 @@ const AppContent: React.FC<{
                 WARN
               </button>
               <button 
-                onClick={() => setDemoState('CRITICAL')}
+                onClick={() => setDemoState('OUTAGE')}
                 className={`py-1 rounded text-[8px] font-black transition-all cursor-pointer ${
-                  demoState === 'CRITICAL' ? 'bg-rose-500 text-brand-bg shadow-sm shadow-rose-500/10' : 'bg-brand-dark text-slate-400 hover:text-slate-200'
+                  demoState === 'OUTAGE' ? 'bg-rose-500 text-brand-bg shadow-sm shadow-rose-500/10' : 'bg-brand-dark text-slate-400 hover:text-slate-200'
                 }`}
               >
-                CRIT
+                OUTAGE
               </button>
             </div>
           </div>
@@ -352,10 +402,45 @@ const AppContent: React.FC<{
       {/* Desktop Main Content Area */}
       <main className="flex-1 overflow-y-auto p-8 max-w-7xl mx-auto w-full scroll-smooth">
         <Routes>
-          <Route path="/" element={<Overview demoState={demoState} setDemoState={setDemoState} />} />
+          <Route 
+            path="/" 
+            element={
+              <Overview 
+                demoState={demoState} 
+                setDemoState={setDemoState} 
+                currentDayIndex={currentDayIndex}
+                setCurrentDayIndex={setCurrentDayIndex}
+                currentBlockIndex={currentBlockIndex}
+                setCurrentBlockIndex={setCurrentBlockIndex}
+                isPlaying={isPlaying}
+                setIsPlaying={setIsPlaying}
+              />
+            } 
+          />
+          <Route 
+            path="/intelligence" 
+            element={
+              <Intelligence 
+                currentDayIndex={currentDayIndex}
+                setCurrentDayIndex={setCurrentDayIndex}
+                currentBlockIndex={currentBlockIndex}
+                setCurrentBlockIndex={setCurrentBlockIndex}
+                isPlaying={isPlaying}
+                setIsPlaying={setIsPlaying}
+              />
+            } 
+          />
           <Route path="/circuits" element={<Circuits />} />
           <Route path="/faults" element={<Faults />} />
-          <Route path="/optimization" element={<Optimization />} />
+          <Route 
+            path="/optimization" 
+            element={
+              <Optimization 
+                currentDayIndex={currentDayIndex}
+                currentBlockIndex={currentBlockIndex}
+              />
+            } 
+          />
           <Route path="/upgrade" element={<Upgrade />} />
           <Route path="/savings" element={<Savings />} />
           <Route path="*" element={<NotFound />} />
@@ -427,6 +512,27 @@ export function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [isQrOpen, setIsQrOpen] = useState(false);
   
+  // Simulator state variables
+  const [currentDayIndex, setCurrentDayIndex] = useState(0);
+  const [currentBlockIndex, setCurrentBlockIndex] = useState(3);
+  const [isPlaying, setIsPlaying] = useState(true);
+
+  // Simulator Play/Pause Timer Block
+  useEffect(() => {
+    if (!isPlaying) return;
+    const interval = setInterval(() => {
+      setCurrentBlockIndex((prevBlock) => {
+        if (prevBlock < 7) {
+          return prevBlock + 1;
+        } else {
+          setCurrentDayIndex((prevDay) => (prevDay + 1) % 7);
+          return 0;
+        }
+      });
+    }, 3500);
+    return () => clearInterval(interval);
+  }, [isPlaying]);
+
   // URL targeting state for dynamic QR codes
   const [qrUrl, setQrUrl] = useState('https://smart-energy-ai.vercel.app');
   const [copied, setCopied] = useState(false);
@@ -571,6 +677,12 @@ export function App() {
           setUnreadCount={setUnreadCount}
           isAlertOpen={isAlertOpen}
           setIsAlertOpen={setIsAlertOpen}
+          currentDayIndex={currentDayIndex}
+          setCurrentDayIndex={setCurrentDayIndex}
+          currentBlockIndex={currentBlockIndex}
+          setCurrentBlockIndex={setCurrentBlockIndex}
+          isPlaying={isPlaying}
+          setIsPlaying={setIsPlaying}
         />
 
         {/* QR Code Presentation Modal */}
