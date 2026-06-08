@@ -22,7 +22,8 @@ import {
   QrCode,
   Copy,
   Check,
-  Brain
+  Brain,
+  Heart
 } from 'lucide-react';
 
 // Import pages
@@ -33,6 +34,7 @@ import Optimization from './pages/Optimization';
 import Upgrade from './pages/Upgrade';
 import Savings from './pages/Savings';
 import Intelligence from './pages/Intelligence';
+import Impact from './pages/Impact';
 
 // Clean 404 Page
 const NotFound: React.FC = () => {
@@ -69,6 +71,7 @@ const navItems: NavItem[] = [
   { name: 'Energy Optimization', path: '/optimization', icon: Zap },
   { name: 'Upgrade Engine', path: '/upgrade', icon: Award },
   { name: 'Savings & ROI', path: '/savings', icon: TrendingUp },
+  { name: 'Impact & Wellbeing', path: '/impact', icon: Heart },
 ];
 
 export type DemoState = 'OPTIMAL' | 'WARNING' | 'OUTAGE';
@@ -250,6 +253,15 @@ const AppContent: React.FC<{
                   />
                 } 
               />
+              <Route 
+                path="/impact" 
+                element={
+                  <Impact 
+                    currentDayIndex={currentDayIndex}
+                    currentBlockIndex={currentBlockIndex}
+                  />
+                } 
+              />
               <Route path="/circuits" element={<Circuits />} />
               <Route path="/faults" element={<Faults />} />
               <Route 
@@ -427,6 +439,15 @@ const AppContent: React.FC<{
                 setCurrentBlockIndex={setCurrentBlockIndex}
                 isPlaying={isPlaying}
                 setIsPlaying={setIsPlaying}
+              />
+            } 
+          />
+          <Route 
+            path="/impact" 
+            element={
+              <Impact 
+                currentDayIndex={currentDayIndex}
+                currentBlockIndex={currentBlockIndex}
               />
             } 
           />
